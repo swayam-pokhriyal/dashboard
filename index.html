@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Sales Dashboard - Assignment</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="bg-slate-50 p-6">
+    <div class="max-w-7xl mx-auto">
+        <header class="flex justify-between items-center mb-8">
+            <h1 class="text-orange-600 font-black text-3xl italic">VOYX</h1>
+            <div class="flex gap-4 items-center">
+                <span class="text-xs font-bold text-slate-400 uppercase">Report Date:</span>
+                <input type="date" id="reportDate" value="2026-05-31" onchange="initDashboard()" class="border rounded-full px-4 py-1 text-sm outline-none shadow-sm">
+                <div id="loader" class="text-xs font-bold text-orange-500">Connecting...</div>
+            </div>
+        </header>
+
+        <!-- CARDS -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div class="bg-slate-900 text-white p-6 rounded-3xl shadow-lg">
+                <p class="text-[10px] font-bold opacity-50 uppercase tracking-widest">Today</p>
+                <div class="text-4xl font-bold mt-2"><span id="t-sales">0</span> <small class="text-sm font-normal opacity-60">Orders</small></div>
+                <div class="text-xl text-orange-400 font-bold">₹<span id="t-rev">0</span></div>
+            </div>
+            <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                <p class="text-[10px] font-bold text-slate-400 uppercase">MTD Sales</p>
+                <div class="text-3xl font-bold mt-2" id="mtd-sales">0</div>
+                <div class="text-lg font-bold text-slate-700">₹<span id="mtd-rev">0</span></div>
+            </div>
+            <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                <p class="text-[10px] font-bold text-slate-400 uppercase">Prev Month Same Day</p>
+                <div class="text-3xl font-bold mt-2" id="pmsd-sales">0</div>
+                <div class="text-lg font-bold text-slate-700">₹<span id="pmsd-rev">0</span></div>
+            </div>
+            <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                <p class="text-[10px] font-bold text-slate-400 uppercase">Prev Month Total</p>
+                <div class="text-3xl font-bold mt-2" id="pm-sales">0</div>
+                <div class="text-lg font-bold text-slate-700">₹<span id="pm-rev">0</span></div>
+            </div>
+        </div>
+
+        <!-- TABLE -->
+        <div class="bg-white rounded-3xl shadow-sm border border-slate-100 p-6 mb-8">
+            <h2 class="text-xs font-bold text-slate-400 uppercase mb-4">Sales Leaderboard</h2>
+            <table class="w-full text-left">
+                <thead class="text-[10px] text-slate-400 uppercase border-b">
+                    <tr><th class="pb-3">Representative</th><th class="pb-3">Today</th><th class="pb-3">Today Rev</th><th class="pb-3">MTD Sales</th><th class="pb-3">MTD Revenue</th></tr>
+                </thead>
+                <tbody id="leaderboard" class="text-sm"></tbody>
+            </table>
+        </div>
+
+        <!-- CHARTS -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-100"><canvas id="dailyChart" height="200"></canvas></div>
+            <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-100"><canvas id="monthlyChart" height="200"></canvas></div>
+        </div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://hjggiwwnldftitoziugd.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhqZ2dpd3dubGRmdGl0b3ppdWdkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3NjA5NDUsImV4cCI6MjA5OTMzNjk0NX0.QW_z-v14QOPO6CmLLIvfPoJRTgWt8MJvVpchG9gPo4E';
+        const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        let dChart, mChart;
+
+        async function initDashboard() {
+            const date = document.getElementById('reportDate').value;
+            document.getElementById('loader').innerText = "Updating...";
+
+            const { data, error } = await sb.rpc('get_sales_dashboard', { report_date: date });
+            if(error) { console.error(error); return; }
+
+            const res = data[0];
+            const kpi = res.kpi_cards;
+
+            // UI Update
+            document.getElementById('t-sales').innerText = kpi.TODAY_SALES;
+            document.getElementById('t-rev').innerText = fmt(kpi.TODAY_REVENUE);
+            document.getElementById('mtd-sales').innerText = kpi.mtd_sales;
+            document.getElementById('mtd-rev').innerText = fmt(kpi.MTD_REVENUE);
+            document.getElementById('pmsd-sales').innerText = kpi.PMSD_SALES;
+            document.getElementById('pmsd-rev').innerText = fmt(kpi.PMSD_REVENUE);
+            document.getElementById('pm-sales').innerText = kpi.PM_SALES;
+            document.getElementById('pm-rev').innerText = fmt(kpi.PM_REVENUE);
+
+            document.getElementById('leaderboard').innerHTML = (res.leaderboard_metrics || []).map(l => `
+                <tr class="border-b border-slate-50">
+                    <td class="py-3 font-bold">${l.sales_representative}</td>
+                    <td class="py-3">${l.today_sales}</td>
+                    <td class="py-3 text-green-600 font-bold">₹${fmt(l.today_revenue)}</td>
+                    <td class="py-3 text-orange-500 font-bold">${l.mtd_sales}</td>
+                    <td class="py-3 font-black">₹${fmt(l.mtd_revenue)}</td>
+                </tr>
+            `).join('');
+
+            renderCharts(res.daily_metrics, res.monthly_metrics);
+            document.getElementById('loader').innerText = "Live: " + date;
+        }
+
+        function renderCharts(daily, monthly) {
+            if(dChart) dChart.destroy();
+            if(mChart) mChart.destroy();
+
+            dChart = new Chart(document.getElementById('dailyChart'), {
+                type: 'line',
+                data: {
+                    labels: (daily || []).map(d => d.order_date),
+                    datasets: [{ label: 'Daily Sales', data: (daily || []).map(d => d.no_of_sales), borderColor: '#f97316', tension: 0.3 }]
+                }
+            });
+
+            mChart = new Chart(document.getElementById('monthlyChart'), {
+                type: 'bar',
+                data: {
+                    labels: (monthly || []).map(m => `M-${m.month}`),
+                    datasets: [{ label: 'Monthly Vol', data: (monthly || []).map(m => m.no_of_sales), backgroundColor: '#1e293b' }]
+                }
+            });
+        }
+
+        function fmt(n) { return n >= 1000 ? (n/1000).toFixed(2) + 'K' : n; }
+        document.addEventListener('DOMContentLoaded', initDashboard);
+    </script>
+</body>
+</html>
